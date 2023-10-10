@@ -1,0 +1,25 @@
+FROM alpine:3.16
+
+# deps
+RUN apk update && apk add binutils git py3-pip curl-dev perl ninja make linux-headers cmake vim bash gcc g++ lld clang boost1.78 llvm13-dev llvm13-static
+
+# conan
+RUN git clone https://github.com/conan-io/conan -b release/1.61 conan-io && cd conan-io && pip install -e . && cd /
+
+RUN mkdir build && \ 
+    git clone https://github.com/ardhipoetra/faasm && \
+    cd faasm && \
+    git submodule update --init --recursive
+
+WORKDIR /build
+
+# clang path is hardcoded
+RUN ln -s  /usr/bin/clang++ /usr/bin/clang++-13
+
+RUN cmake -GNinja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=/usr/bin/clang++ -DCMAKE_C_COMPILER=/usr/bin/clang \
+    -DCMAKE_INSTALL_PREFIX=/usr/local -DFAASM_USE_SANITISER=None -DFAABRIC_USE_SANITISER=No -DFAASM_SGX_MODE=Disabled \
+    -DFAASM_WASM_BYTES_PER_PAGE=65536 -DFAASM_WASM_CTORS_FUNC_NAME=__wasm_call_ctors -DFAASM_WASM_MAX_MEMORY=4294901760 \
+    -DFAASM_WASM_STACK_SIZE=4194304 -DFAASM_WASM_ZYGOTE_FUNC_NAME=_faasm_zygote -DFAASM_STATIC_LIBS=OFF \
+    /faasm 
+
+RUN ninja
