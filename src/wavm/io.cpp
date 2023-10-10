@@ -19,7 +19,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/uio.h>
-#include <sys/unistd.h>
+#include <unistd.h>
 
 #include <WAVM/Runtime/Intrinsics.h>
 #include <WAVM/Runtime/Runtime.h>
