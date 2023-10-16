@@ -21,11 +21,12 @@ target_include_directories(attestation PUBLIC
 # over HTTP. We use that the library is installed through faabric.
 find_package(cpprestsdk REQUIRED)
 find_package(cppcodec REQUIRED)
+add_link_options(-lcrypto)
 
 target_link_libraries(attestation
     faasm::common_deps
     cppcodec::cppcodec
-    cpprestsdk::cpprestsdk
+    cpprestsdk::cpprest
     jwt-cpp::jwt-cpp
     picojson::picojson
     RapidJSON::RapidJSON

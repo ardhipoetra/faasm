@@ -6,4 +6,5 @@ target_link_libraries(codegen PUBLIC
     faasm::storage
     faasm::wamrmodule
     faasm::wavmmodule
+    OpenSSL::SSL
 )

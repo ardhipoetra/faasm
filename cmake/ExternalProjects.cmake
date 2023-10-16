@@ -1,5 +1,7 @@
 include(FindGit)
 find_package(Git)
+include(FindOpenSSL)
+find_package(OpenSSL)
 include (ExternalProject)
 include (FetchContent)
 
@@ -60,6 +62,7 @@ find_package(Catch2 REQUIRED)
 find_package(jwt-cpp REQUIRED)
 find_package(picojson REQUIRED)
 find_package(RapidJSON REQUIRED)
+find_package(cpprestsdk REQUIRED)
 
 # 22/12/2021 - WARNING: we don't install AWS through Conan as the recipe proved
 # very unstable and failed frequently.

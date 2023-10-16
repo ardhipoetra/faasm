@@ -115,6 +115,7 @@ target_link_libraries(enclave_untrusted
     faasm::attestation
     wamrlib_untrusted
     wasm
+    OpenSSL::SSL
 )
 
 add_library(faasm::enclave ALIAS enclave_untrusted)

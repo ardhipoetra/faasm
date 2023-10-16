@@ -5,10 +5,12 @@ faasm_private_lib(storage
     S3Wrapper.cpp
     SharedFiles.cpp
 )
+
+add_link_options(-lcrypto)
 target_include_directories(storage PRIVATE ${FAASM_INCLUDE_DIR}/storage)
 target_link_libraries(storage PUBLIC
     faasm::wavmmodule
     faasm::wamrmodule
     AWS::s3
-    cpprestsdk::cpprestsdk
+    cpprestsdk::cpprest
 )
