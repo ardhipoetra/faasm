@@ -81,7 +81,7 @@ set(AWS_CORE_LIBRARY ${CMAKE_INSTALL_PREFIX}/lib/libaws-cpp-sdk-core.so)
 set(AWS_S3_LIBRARY ${CMAKE_INSTALL_PREFIX}/lib/libaws-cpp-sdk-s3.so)
 ExternalProject_Add(aws_ext
     GIT_REPOSITORY   "https://github.com/aws/aws-sdk-cpp.git"
-    GIT_TAG          "a47c163630a4d4e62cd3c42e9c391c954be80664"
+    GIT_TAG          "4bb8ef9677af4376c07eaff5ba5b9f8bc738d314" #1.10.53
     BUILD_ALWAYS     0
     TEST_COMMAND     ""
     UPDATE_COMMAND   ""
