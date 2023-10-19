@@ -70,7 +70,7 @@ ClientConfiguration getClientConf(long timeout)
 
     conf::FaasmConfig& faasmConf = conf::getFaasmConfig();
 
-    config.region = "";
+    config.region = "invalid";
     config.verifySSL = false;
     config.endpointOverride = faasmConf.s3Host + ":" + faasmConf.s3Port;
     config.connectTimeoutMs = S3_CONNECT_TIMEOUT_MS;
