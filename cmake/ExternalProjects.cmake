@@ -117,9 +117,13 @@ FetchContent_Declare(wavm_ext
         -DDLL_IMPORT="
 )
 
+set(wamr_patch git apply ${CMAKE_CURRENT_SOURCE_DIR}/wamr.patch)
+
 FetchContent_Declare(wamr_ext
     GIT_REPOSITORY "https://github.com/faasm/wasm-micro-runtime"
     GIT_TAG "5e9dc3c7eb33167389d99b7e5851dc55b5911d33"
+    PATCH_COMMAND ${wamr_patch}
+    UPDATE_DISCONNECTED 1
 )
 
 # WAMR and WAVM both link to LLVM
