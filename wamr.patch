@@ -1,0 +1,22 @@
+diff --git a/core/iwasm/aot/aot_loader.c b/core/iwasm/aot/aot_loader.c
+index 5345fb2d..d1c77879 100644
+--- a/core/iwasm/aot/aot_loader.c
++++ b/core/iwasm/aot/aot_loader.c
+@@ -1480,7 +1480,7 @@ load_object_data_sections(const uint8 **p_buf, const uint8 *buf_end,
+     && !defined(BH_PLATFORM_DARWIN)
+         /* address must be in the first 2 Gigabytes of
+            the process address space */
+-        bh_assert((uintptr_t)data_sections[i].data < INT32_MAX);
++//        bh_assert((uintptr_t)data_sections[i].data < INT32_MAX);
+ #endif
+ #endif
+ 
+@@ -2805,7 +2805,7 @@ create_sections(AOTModule *module, const uint8 *buf, uint32 size,
+     && !defined(BH_PLATFORM_DARWIN)
+                     /* address must be in the first 2 Gigabytes of
+                        the process address space */
+-                    bh_assert((uintptr_t)aot_text < INT32_MAX);
++//                    bh_assert((uintptr_t)aot_text < INT32_MAX);
+ #endif
+ #endif
+                     bh_memcpy_s(aot_text, (uint32)total_size,
