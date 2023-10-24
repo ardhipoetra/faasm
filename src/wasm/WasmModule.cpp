@@ -199,7 +199,8 @@ std::string WasmModule::getBoundFunction()
 int WasmModule::getStdoutFd()
 {
     if (stdoutMemFd == 0) {
-        stdoutMemFd = memfd_create("stdoutfd", 0);
+	stdoutMemFd = fileno(::tmpfile());
+        //stdoutMemFd = memfd_create("stdoutfd", 0);
         SPDLOG_DEBUG("Capturing stdout: fd={}", stdoutMemFd);
     }
 
