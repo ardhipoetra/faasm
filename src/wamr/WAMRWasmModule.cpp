@@ -251,7 +251,9 @@ void WAMRWasmModule::createThreadsExecEnv(WASMExecEnv* parentExecEnv)
 
     for (int i = 1; i < threadPoolSize; i++) {
         if (execEnvs.at(i) == nullptr) {
-            wasm_runtime_set_exec_env_tls(parentExecEnv);
+            // SCONE:   this apparently need the hw bound check enabled, which consumes a huge
+            //          amount of memory
+            // wasm_runtime_set_exec_env_tls(nullptr);
             execEnvs.at(i) = wasm_runtime_spawn_exec_env(execEnvs.at(0));
         }
         if (execEnvs.at(i) == nullptr) {
@@ -277,7 +279,9 @@ void WAMRWasmModule::destroyThreadsExecEnv(bool destroyMainExecEnv)
     if (destroyMainExecEnv && execEnvs.at(0) != nullptr) {
         wasm_runtime_destroy_exec_env(execEnvs.at(0));
         execEnvs.at(0) = nullptr;
-        wasm_runtime_set_exec_env_tls(nullptr);
+        // SCONE:   this apparently need the hw bound check enabled, which consumes a huge
+        //          amount of memory
+        // wasm_runtime_set_exec_env_tls(nullptr);
     }
 }
 
