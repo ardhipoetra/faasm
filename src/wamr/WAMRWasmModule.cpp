@@ -328,7 +328,9 @@ bool WAMRWasmModule::executeCatchException(WASMFunctionInstanceCommon* func,
         if (execEnv != nullptr) {
             wasm_runtime_destroy_exec_env(execEnv);
         }
-        wasm_runtime_set_exec_env_tls(nullptr);
+        // SCONE:   this apparently need the hw bound check enabled, which consumes a huge
+        //          amount of memory
+        // wasm_runtime_set_exec_env_tls(nullptr);
     };
 
     // Create an execution environment
