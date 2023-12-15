@@ -1,0 +1,198 @@
+version: "3"
+
+services:
+  redis-state:
+    image: registry.scontain.com/sconecuratedimages/apps:redis-6.2.6-bullseye
+    privileged: true
+    devices: 
+      - "/dev/sgx_enclave:/dev/sgx_enclave"
+    environment:
+      SCONE_VERSION: 1
+      SCONE_MODE: hw
+      SCONE_LOG: debug
+
+  redis-queue:
+    privileged: true
+    image: registry.scontain.com/sconecuratedimages/apps:redis-6.2.6-bullseye
+    devices: 
+      - "/dev/sgx_enclave:/dev/sgx_enclave"
+    environment:
+      SCONE_VERSION: 1
+      SCONE_MODE: hw
+      SCONE_LOG: debug
+
+  planner:
+    image: registry.scontain.com/ardhipoetra/registry/cloudskin:faasm
+    # Pass the build dir as argument to the entrypoint, so that the binaries
+    # are correctly mounted. In general we prefer to use the binaries built
+    # by faasm (in FAASM_BUILD_MOUNT) but occasionally, e.g. when deploying
+    # a dettached cluster, we need to use the binaries within the docker image.
+    # So we allow overwritting the binary path
+    entrypoint: /opt/planner_entrypoint.sh
+    devices: 
+      - "/dev/sgx_enclave:/dev/sgx_enclave"
+    command: /build/bin/
+    ports:
+      - "${PLANNER_HOST_PORT}:${PLANNER_DOCKER_PORT}"
+    volumes:
+      - ${FAASM_BUILD_DIR}:${FAASM_BUILD_MOUNT}
+    environment:
+      - SCONE_HEAP=2G
+      - SCONE_LOG=debug
+      - LOG_LEVEL=debug
+      - PLANNER_PORT=8080
+
+  minio:
+    image: registry.scontain.com/ardhipoetra/registry/cloudskin:minio
+    ports:
+      - "${MINIO_HOST_PORT}:${MINIO_DOCKER_PORT}"
+    environment:
+      SCONE_HEAP: 2G
+      SCONE_VERSION: 1
+      SCONE_MODE: hw
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio123
+    command: ["server", "/tmp/minio"]
+    volumes:
+      - ./tmp/minio/data:/data/minio
+    devices: 
+      - "/dev/sgx_enclave:/dev/sgx_enclave"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
+  upload:
+    image: registry.scontain.com/ardhipoetra/registry/cloudskin:faasm
+    entrypoint: /build/bin/upload
+    ports:
+      - "${UPLOAD_HOST_PORT}:${UPLOAD_DOCKER_PORT}"
+    expose:
+      - "5000"
+    depends_on:
+      - redis-queue
+      - redis-state
+      - planner
+      - minio
+    restart: on-failure
+    volumes:
+      - ./:${FAASM_CODE_MOUNT}
+      - ${FAASM_BUILD_DIR}:${FAASM_BUILD_MOUNT} # RD
+      - ./dev/faasm-local/wasm/:${FAASM_LOCAL_MOUNT}/wasm
+      - ./dev/faasm-local/object/:${FAASM_LOCAL_MOUNT}/object
+    environment:
+      - SCONE_HEAP=2G
+      - SCONE_LOG=debug
+      - SCONE_VERSION=1
+      - SCONE_MODE=hw
+      - LOG_LEVEL=debug
+      - PLANNER_HOST=planner
+      - PLANNER_PORT=8081
+      - PYTHON_CODEGEN=${PYTHON_CODEGEN:-off}
+      - REDIS_QUEUE_HOST=redis-queue
+      - REDIS_STATE_HOST=redis-state
+      - LD_LIBRARY_PATH=/build/faasm/third-party/lib:/usr/local/lib
+      - WASM_VM=${WASM_VM:-wamr}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    devices: 
+      - "/dev/sgx_enclave:/dev/sgx_enclave"
+
+  # Distributed worker, used for executing as a local cluster
+  worker:
+    image: registry.scontain.com/ardhipoetra/registry/cloudskin:faasm
+    entrypoint: /build/bin/pool_runner
+    depends_on:
+      - planner
+      - upload
+    expose:
+      - "5000"
+    privileged: true
+    volumes:
+      - ./:${FAASM_CODE_MOUNT}
+      - ${FAASM_BUILD_DIR}:${FAASM_BUILD_MOUNT}
+      - ./dev/faasm-local/:${FAASM_LOCAL_MOUNT}
+    devices: 
+      - "/dev/sgx_enclave:/dev/sgx_enclave"
+    environment:
+      - SCONE_HEAP=8G
+      - SCONE_VERSION=1
+      - SCONE_MODE=hw
+      - CAPTURE_STDOUT=on
+      - CGROUP_MODE=off
+      - GLOBAL_MESSAGE_TIMEOUT=600000
+      - LOG_LEVEL=trace
+      - NETNS_MODE=off
+      - MAX_NET_NAMESPACES=1
+      - PLANNER_HOST=planner
+      - PLANNER_PORT=8081
+      - REDIS_QUEUE_HOST=redis-queue
+      - REDIS_STATE_HOST=redis-state
+      - OVERRIDE_CPU_COUNT=2
+      - LD_LIBRARY_PATH=/usr/local/lib:/build/lib/
+      # /build/faasm/third-party/lib
+      - WASM_VM=${WASM_VM:-wamr}
+      - SGX_AESM_ADDR=0
+      - AZ_ATTESTATION_PROVIDER_URL=https://faasmattprov.eus2.attest.azure.net
+      # - ENDPOINT_NUM_THREADS=1
+      # - FUNCTION_SERVER_THREADS=1
+      # - STATE_SERVER_THREADS=1
+      # - SNAPSHOT_SERVER_THREADS=1
+      # - DIRTY_TRACKING_MODE=none
+      # - STATE_MODE=redis
+
+
+#   # C/C++ functions
+  cpp:
+    image: ${CPP_CLI_IMAGE}
+    working_dir: /code/cpp
+    stdin_open: true
+    tty: true
+    volumes:
+      - ../clients/cpp:/code/cpp
+      - ./dev/faasm-local/:${FAASM_LOCAL_MOUNT}
+
+  # Python functions
+  python:
+    image: ${PYTHON_CLI_IMAGE}
+    working_dir: /code/python
+    stdin_open: true
+    tty: true
+    volumes:
+      - ../clients/python:/code/python
+      - ./dev/faasm-local/:${FAASM_LOCAL_MOUNT}
+
+  # Faasm dev
+  faasm-cli:
+    image: ${FAASM_CLI_IMAGE}
+    working_dir: /usr/local/code/faasm
+    stdin_open: true
+    tty: true
+    privileged: true
+    depends_on:
+      - redis-state
+      - redis-queue
+      - planner
+      - minio
+    environment:
+      - UPLOAD_HOST=${UPLOAD_HOST:-upload}
+      - PLANNER_HOST=planner
+      - PLANNER_PORT=8080
+      - LOG_LEVEL=debug
+      - REDIS_QUEUE_HOST=redis-queue
+      - REDIS_STATE_HOST=redis-state
+      - LD_LIBRARY_PATH=/build/faasm/third-party/lib:/usr/local/lib
+      - WASM_VM=${WASM_VM:-wavm}
+      - SGX_AESM_ADDR=0
+      - AZ_ATTESTATION_PROVIDER_URL=https://faasmattprov.eus2.attest.azure.net
+      - AZDCAP_DEBUG_LOG_LEVEL=info
+    volumes:
+      - ../:${FAASM_CODE_MOUNT}
+      - ${FAASM_BUILD_DIR}:${FAASM_BUILD_MOUNT}
+      - ./dev/faasm-local/:${FAASM_LOCAL_MOUNT}
+      - ${CONAN_CACHE_MOUNT_SOURCE}:${FAASM_CONAN_MOUNT}
+      - ${SGX_DEVICE_MOUNT_DIR:-./dev/faasm-local/sgx}:/dev/sgx

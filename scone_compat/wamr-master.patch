@@ -1,0 +1,196 @@
+diff --git a/core/iwasm/aot/aot_loader.c b/core/iwasm/aot/aot_loader.c
+index 6575c8ac..8520d3e9 100644
+--- a/core/iwasm/aot/aot_loader.c
++++ b/core/iwasm/aot/aot_loader.c
+@@ -1584,7 +1584,7 @@ load_object_data_sections(const uint8 **p_buf, const uint8 *buf_end,
+     && !defined(BH_PLATFORM_DARWIN)
+         /* address must be in the first 2 Gigabytes of
+            the process address space */
+-        bh_assert((uintptr_t)data_sections[i].data < INT32_MAX);
++//        bh_assert((uintptr_t)data_sections[i].data < INT32_MAX);
+ #endif
+ #endif
+ 
+@@ -3118,7 +3118,7 @@ create_sections(AOTModule *module, const uint8 *buf, uint32 size,
+     && !defined(BH_PLATFORM_DARWIN)
+                     /* address must be in the first 2 Gigabytes of
+                        the process address space */
+-                    bh_assert((uintptr_t)aot_text < INT32_MAX);
++//                    bh_assert((uintptr_t)aot_text < INT32_MAX);
+ #endif
+ #endif
+ 
+diff --git a/core/iwasm/aot/aot_runtime.c b/core/iwasm/aot/aot_runtime.c
+index 0799d625..2d0bf2a4 100644
+--- a/core/iwasm/aot/aot_runtime.c
++++ b/core/iwasm/aot/aot_runtime.c
+@@ -1358,10 +1358,13 @@ invoke_native_with_hw_bound_check(WASMExecEnv *exec_env, void *func_ptr,
+         return false;
+     }
+ 
++// TODO: This assertion is failing in Faasm
++#ifndef WAMR_FAASM
+     if (!os_thread_signal_inited()) {
+         aot_set_exception(module_inst, "thread signal env not inited");
+         return false;
+     }
++#endif
+ 
+     wasm_exec_env_push_jmpbuf(exec_env, &jmpbuf_node);
+ 
+@@ -1629,6 +1632,7 @@ aot_set_exception_with_id(AOTModuleInstance *module_inst, uint32 id)
+     if (id != EXCE_ALREADY_THROWN)
+         wasm_set_exception_with_id(module_inst, id);
+ #ifdef OS_ENABLE_HW_BOUND_CHECK
++    // TODO: this check is making us seg-fault during proc_exit!
+     wasm_runtime_access_exce_check_guard_page();
+ #endif
+ }
+diff --git a/core/iwasm/compilation/aot_llvm_extra.cpp b/core/iwasm/compilation/aot_llvm_extra.cpp
+index 72e163fa..2aa7dfd3 100644
+--- a/core/iwasm/compilation/aot_llvm_extra.cpp
++++ b/core/iwasm/compilation/aot_llvm_extra.cpp
+@@ -343,7 +343,7 @@ aot_apply_llvm_new_pass_manager(AOTCompContext *comp_ctx, LLVMModuleRef module)
+             ExitOnErr(PB.parsePassPipeline(MPM, comp_ctx->llvm_passes));
+         }
+ 
+-        if (OptimizationLevel::O0 == OL) {
++        if (PassBuilder::OptimizationLevel::O0 == OL) {
+             MPM.addPass(PB.buildO0DefaultPipeline(OL));
+         }
+         else {
+diff --git a/core/iwasm/compilation/iwasm_compl.cmake b/core/iwasm/compilation/iwasm_compl.cmake
+index 4ec46030..09883835 100644
+--- a/core/iwasm/compilation/iwasm_compl.cmake
++++ b/core/iwasm/compilation/iwasm_compl.cmake
+@@ -18,9 +18,11 @@ set (IWASM_COMPL_SOURCE ${source_all})
+ 
+ # Disalbe rtti to works with LLVM
+ 
+-if (MSVC)
+-  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /GR-")
+-else()
+-  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-rtti")
+-endif()
++# Faasm: faasm needs to turn on RTTI because LLVM's Ubuntu build has RTTI
++# enabled
++# if (MSVC)
++#   set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /GR-")
++# else()
++#   set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-rtti")
++# endif()
+ 
+diff --git a/core/shared/platform/linux-sgx/sgx_platform.c b/core/shared/platform/linux-sgx/sgx_platform.c
+index 1a90af4c..3b4c37ff 100644
+--- a/core/shared/platform/linux-sgx/sgx_platform.c
++++ b/core/shared/platform/linux-sgx/sgx_platform.c
+@@ -7,6 +7,12 @@
+ #include "platform_api_extension.h"
+ #include "sgx_rsrv_mem_mngr.h"
+ 
++// Faasm: additional import to workaround a discrepancy with function
++// signatures
++#ifdef WAMR_FAASM
++#include <enclave/inside/ocalls_wamr.h>
++#endif
++
+ #if WASM_ENABLE_SGX_IPFS != 0
+ #include "sgx_ipfs.h"
+ #endif
+@@ -82,6 +88,7 @@ os_printf(const char *message, ...)
+ {
+     int bytes_written = 0;
+ 
++#ifndef WAMR_FAASM
+     if (print_function != NULL) {
+         char msg[FIXED_BUFFER_SIZE] = { '\0' };
+         va_list ap;
+@@ -90,6 +97,21 @@ os_printf(const char *message, ...)
+         va_end(ap);
+         bytes_written += print_function(msg);
+     }
++#else
++    // Faasm: WAMR has changed the signature for os_print_function_t making it
++    // return an integer. The way we define ocalls (through our own header file
++    // and not using the Edger8r's generated one) means that there's a
++    // signature discrepancy with functions that return one value. The simplest
++    // fix is to hack the os_printf and os_vprintf implementations for SGX.
++    char msg[FIXED_BUFFER_SIZE] = { '\0' };
++    va_list ap;
++    va_start(ap, message);
++    vsnprintf(msg, FIXED_BUFFER_SIZE, message, ap);
++    va_end(ap);
++    int actual_written;
++    ocallLogWamr(&actual_written, msg);
++    bytes_written += actual_written;
++#endif
+ 
+     return bytes_written;
+ }
+@@ -99,11 +121,24 @@ os_vprintf(const char *format, va_list arg)
+ {
+     int bytes_written = 0;
+ 
++#ifndef WAMR_FAASM
+     if (print_function != NULL) {
+         char msg[FIXED_BUFFER_SIZE] = { '\0' };
+         vsnprintf(msg, FIXED_BUFFER_SIZE, format, arg);
+         bytes_written += print_function(msg);
+     }
++#else
++    // Faasm: WAMR has changed the signature for os_print_function_t making it
++    // return an integer. The way we define ocalls (through our own header file
++    // and not using the Edger8r's generated one) means that there's a
++    // signature discrepancy with functions that return one value. The simplest
++    // fix is to hack the os_printf and os_vprintf implementations for SGX.
++    char msg[FIXED_BUFFER_SIZE] = { '\0' };
++    vsnprintf(msg, FIXED_BUFFER_SIZE, format, arg);
++    int actual_written;
++    ocallLogWamr(&actual_written, msg);
++    bytes_written += actual_written;
++#endif
+ 
+     return bytes_written;
+ }
+diff --git a/core/shared/platform/linux-sgx/sgx_pthread.h b/core/shared/platform/linux-sgx/sgx_pthread.h
+index 01a3ae04..3677f4ef 100644
+--- a/core/shared/platform/linux-sgx/sgx_pthread.h
++++ b/core/shared/platform/linux-sgx/sgx_pthread.h
+@@ -6,6 +6,8 @@
+ #ifndef _SGX_PTHREAD_H
+ #define _SGX_PTHREAD_H
+ 
++#ifndef SGX_THREAD_LOCK_INITIALIZER
++
+ #ifdef __cplusplus
+ extern "C" {
+ #endif
+@@ -32,4 +34,6 @@ pthread_rwlock_unlock(pthread_rwlock_t *rwlock);
+ }
+ #endif
+ 
++#endif
++
+ #endif /* end of _SGX_PTHREAD_H */
+diff --git a/core/shared/platform/linux-sgx/shared_platform.cmake b/core/shared/platform/linux-sgx/shared_platform.cmake
+index b2de1ab0..f886d084 100644
+--- a/core/shared/platform/linux-sgx/shared_platform.cmake
++++ b/core/shared/platform/linux-sgx/shared_platform.cmake
+@@ -14,11 +14,12 @@ else()
+   set (SGX_SDK_DIR $ENV{SGX_SDK})
+ endif()
+ 
+-include_directories (${SGX_SDK_DIR}/include)
+-if (NOT BUILD_UNTRUST_PART EQUAL 1)
+-  include_directories (${SGX_SDK_DIR}/include/tlibc
+-                       ${SGX_SDK_DIR}/include/libcxx)
+-endif ()
++#We must include these dependencies in src/sgx/CMakeLists.txt to handle the different include scopes
++#include_directories (${SGX_SDK_DIR}/include)
++#if (NOT BUILD_UNTRUST_PART EQUAL 1)
++  #include_directories (${SGX_SDK_DIR}/include/tlibc
++  #                     ${SGX_SDK_DIR}/include/libcxx)
++#endif ()
+ 
+ if (NOT WAMR_BUILD_LIBC_WASI EQUAL 1)
+   add_definitions(-DSGX_DISABLE_WASI)

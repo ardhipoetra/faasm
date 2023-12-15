@@ -1,0 +1,69 @@
+FROM registry.scontain.com/ardhipoetra/registry/sconecc:alpine3.16 as base
+#  alpine:3.16
+
+# deps
+RUN apk update && apk add bash gcc g++ git curl-dev binutils py3-pip perl ninja cmake lld
+
+#deps2
+RUN echo "https://dl-cdn.alpinelinux.org/alpine/v3.16/main" > a.repo &&\
+    apk add --repositories-file=a.repo make samurai linux-headers vim clang boost1.78 llvm13-dev llvm13-static boost-dev
+
+# cpprestsdk
+RUN git clone https://github.com/microsoft/cpprestsdk 
+WORKDIR /cpprestsdk
+RUN mkdir build && cd build && \
+     cmake -G Ninja ../ -DWERROR=OFF -DCPPREST_EXCLUDE_WEBSOCKETS=ON -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=OFF -DBUILD_SAMPLES=OFF -DCMAKE_CXX_COMPILER=/usr/bin/clang++ -DCMAKE_C_COMPILER=/usr/bin/clang && \
+     ninja install
+
+WORKDIR /
+
+# conan
+RUN git clone https://github.com/conan-io/conan -b release/1.61 conan-io && cd conan-io && pip install -e . && cd /
+
+# faasm
+RUN mkdir build && \
+    git clone https://github.com/ardhipoetra/faasm && \
+    cd faasm && \
+    git submodule update --init --recursive
+    
+# && \
+# sed -i 's/faasm\/wasm-micro-runtime/bytecodealliance\/wasm-micro-runtime/' cmake/ExternalProjects.cmake && \
+# sed -i 's/5e9dc3c7eb33167389d99b7e5851dc55b5911d33/d6bba13e867c0289d09e3b89a0edbef8f371012e/' cmake/ExternalProjects.cmake
+# COPY wamr-master.patch /faasm/wamr.patch
+
+
+WORKDIR /build
+
+# clang path is hardcoded
+RUN ln -s  /usr/bin/clang++ /usr/bin/clang++-13
+
+RUN cmake -GNinja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=/usr/bin/clang++ -DCMAKE_C_COMPILER=/usr/bin/clang \
+    -DCMAKE_INSTALL_PREFIX=/usr/local -DFAASM_USE_SANITISER=None -DFAABRIC_USE_SANITISER=No -DFAASM_SGX_MODE=Disabled \
+    -DFAASM_WASM_BYTES_PER_PAGE=65536 -DFAASM_WASM_CTORS_FUNC_NAME=__wasm_call_ctors -DFAASM_WASM_MAX_MEMORY=2147483648 \
+    -DFAASM_WASM_STACK_SIZE=2097152 -DFAASM_WASM_ZYGOTE_FUNC_NAME=_faasm_zygote -DFAASM_STATIC_LIBS=OFF -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE\
+    /faasm 
+
+RUN ninja
+
+RUN mkdir bin-native && cp bin/* bin-native/
+RUN cd bin/ && \
+    for i in `ls`; do scone-signer sign --sconify --syslibs=1 --dlopen=2 $i; done
+
+RUN cp /faasm/faabric/bin/planner_entrypoint.sh \
+    /faasm/bin/entrypoint_codegen.sh \
+    /faasm/bin/entrypoint_upload.sh \
+    /faasm/bin/entrypoint_worker.sh \
+    /opt/
+
+RUN mkdir -p /usr/local/faasm/runtime_root/etc \
+    && mkdir -p /usr/local/faasm/runtime_root/tmp \
+    && mkdir -p /usr/local/faasm/runtime_root/share
+
+ENV FAASM_DOCKER="on"
+
+RUN apk add curl strace
+
+FROM registry.scontain.com/ardhipoetra/registry/sconecc:alpine3.16
+COPY --from=base / /
+
+# cp bin/* bin-native/ && cd bin/ && for i in `ls`; do scone-signer sign --sconify --syslibs=1 --dlopen=2 $i; done && cd ../
