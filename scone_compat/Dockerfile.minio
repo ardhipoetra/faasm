@@ -1,0 +1,23 @@
+FROM sconecuratedimages/golang:1.20.5-bullseye AS base
+
+# RUN cd / && git clone https://github.com/minio/minio -b RELEASE.2021-10-23T03-28-24Z
+RUN cd / && git clone https://github.com/minio/minio -b RELEASE.2023-10-16T04-13-43Z
+WORKDIR /minio
+
+# return nil on CheckCrossDevice
+RUN sed -i -e '70i \\treturn nil' -e '70{s/^/\/\//}' /minio/internal/mountinfo/mountinfo_linux.go 
+# build
+RUN go build . && \
+    scone-signer sign --sconify --dlopen=2 --syslibs=1 minio && \
+    cp /minio/minio /usr/bin/minio
+
+# EXPOSE 9000
+RUN cp dockerscripts/docker-entrypoint.sh /usr/bin/docker-entrypoint.sh
+
+
+FROM sconecuratedimages/golang:1.20.5-bullseye
+COPY --from=base / /
+
+ENTRYPOINT ["/usr/bin/docker-entrypoint.sh"]
+VOLUME ["/data"]
+CMD ["minio"]

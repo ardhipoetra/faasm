@@ -1,3 +1,3 @@
-FROM minio/minio:RELEASE.2021-10-23T03-28-24Z
+FROM registry.scontain.com/ardhipoetra/registry/cloudskin:minio
 
 CMD ["server", "/data/minio"]
