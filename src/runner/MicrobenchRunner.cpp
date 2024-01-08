@@ -72,7 +72,7 @@ int MicrobenchRunner::doRun(std::ofstream& outFs,
         return 1;
     }
 
-    std::vector<uint8_t> objBytes = loader.loadFunctionObjectFile(msg);
+    std::vector<uint8_t> objBytes = loader.loadFunctionWamrAotFile(msg);
     if (objBytes.empty()) {
         SPDLOG_ERROR(
           "Could not load object file for {}/{}. Make sure you've run codegen");
