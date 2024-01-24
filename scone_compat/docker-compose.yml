@@ -29,6 +29,8 @@ services:
     # a dettached cluster, we need to use the binaries within the docker image.
     # So we allow overwritting the binary path
     entrypoint: /opt/planner_entrypoint.sh
+    devices: 
+      - "/dev/sgx_enclave:/dev/sgx_enclave"
     command: /build/bin/
     ports:
       - "${PLANNER_HOST_PORT}:${PLANNER_DOCKER_PORT}"
@@ -114,7 +116,6 @@ services:
       - ./:${FAASM_CODE_MOUNT}
       - ${FAASM_BUILD_DIR}:${FAASM_BUILD_MOUNT}
       - ./dev/faasm-local/:${FAASM_LOCAL_MOUNT}
-      - ${SGX_DEVICE_MOUNT_DIR:-./dev/faasm-local/sgx}:/dev/sgx
     devices: 
       - "/dev/sgx_enclave:/dev/sgx_enclave"
     environment:
