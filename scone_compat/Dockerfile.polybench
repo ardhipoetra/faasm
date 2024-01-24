@@ -1,0 +1,46 @@
+FROM faasm.azurecr.io/cpp-sysroot:0.3.1 AS base
+
+# Hack to override CPP container venv
+WORKDIR /code/cpp
+
+RUN apt update && apt install -y python3-numpy vim
+RUN python3 -m venv --system-site-packages venv
+
+# microbench
+RUN git clone https://github.com/faasm/experiment-microbench /code/experiment-microbench
+WORKDIR /code/experiment-microbench
+
+# remove numpy and pandas
+# and remove task that uses it
+RUN sed -i '6d;7d' requirements.txt &&\
+    sed -i '4d;10d' tasks/__init__.py &&\
+    rm tasks/plot.py
+
+RUN pip3 install -r requirements.txt
+
+# get the paths
+RUN python -c \
+    'import faasmtools; print("\n".join(["export "+k+"=\""+v+"\"" for k,v in faasmtools.build.FAASM_BUILD_ENV_DICT.items()]))' > path.sh &&\
+    source path.sh
+
+RUN inv polybench.wasm
+
+FROM registry.scontain.com/ardhipoetra/registry/cloudskin:faasm
+
+COPY --from=base /code/ /code
+WORKDIR /code/experiment-microbench
+
+# replace the upload to follow faasm.ini
+RUN sed -i '98,103d' tasks/polybench.py
+RUN sed -i '98i\        from faasmctl.util.upload import upload_wasm\n        upload_wasm(POLYBENCH_USER, func_name, full_file)' tasks/polybench.py
+RUN inv polybench.upload
+# then run : 
+## 
+
+# plotting : inv plot.polybench --headless
+
+RUN git clone https://github.com/faasm/experiment-microbench /code/experiment-microbench && cd /code/experiment-microbench && sed -i '6d;7d' requirements.txt &&\
+    sed -i '4d;10d' tasks/__init__.py && rm tasks/plot.py && pip3 install -r requirements.txt && python -c \
+    'import faasmtools; print("\n".join(["export "+k+"=\""+v+"\"" for k,v in faasmtools.build.FAASM_BUILD_ENV_DICT.items()]))' > path.sh &&\
+    source path.sh && inv polybench.wasm && sed -i '98,103d' tasks/polybench.py && sed -i '98i\        from faasmctl.util.upload import upload_wasm\n        upload_wasm(POLYBENCH_USER, func_name, full_file)' tasks/polybench.py &&\
+        inv polybench.upload
